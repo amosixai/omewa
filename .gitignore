@@ -1,0 +1,40 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build output
+dist
+dist-ssr
+*.local
+
+# Test / coverage artifacts
+coverage
+playwright-report
+test-results
+/blob-report/
+/playwright/.cache/
+
+# Env & secrets — never commit real keys
+.env
+.env.*
+!.env.example
+
+# Local, machine-specific Claude Code settings (keep launch.json shared)
+.claude/settings.local.json
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+logs
+*.log
+npm-debug.log*
