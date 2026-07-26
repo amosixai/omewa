@@ -32,6 +32,30 @@ if (typeof globalThis.localStorage === 'undefined') {
   });
 }
 
+// jsdom lacks IntersectionObserver (used by the infinite-scroll feed) and
+// Element.scrollIntoView (chat/comment auto-scroll). Provide inert stubs.
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  class MockIntersectionObserver implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = '';
+    readonly thresholds = [];
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  }
+  Object.defineProperty(globalThis, 'IntersectionObserver', {
+    value: MockIntersectionObserver,
+    configurable: true,
+    writable: true,
+  });
+}
+
+// jsdom's scrollIntoView logs "Not implemented"; replace it with a no-op.
+Element.prototype.scrollIntoView = () => {};
+
 afterEach(() => {
   cleanup();
   localStorage.clear();

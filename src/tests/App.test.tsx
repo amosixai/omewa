@@ -21,9 +21,10 @@ describe('App routing', () => {
     useAuthStore.setState({ user: null, status: 'idle' });
   });
 
-  it('redirects the index route to the signup page', () => {
+  it('sends a logged-out visitor from the feed to the login page', async () => {
     renderApp('/');
-    expect(screen.getByText(/create your account/i)).toBeInTheDocument();
+    // Bootstrap resolves to no session, so the protected feed redirects to login.
+    expect(await screen.findByText(/welcome back/i)).toBeInTheDocument();
   });
 
   it('renders a 404 for an unknown route', () => {

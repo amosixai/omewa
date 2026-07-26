@@ -1,7 +1,14 @@
 # Amosix
 
-A professional account/signup starter built for correctness, speed, and change.
-React 19 + Vite + TypeScript (strict), with a swappable auth backend.
+A mobile-first social app — think Instagram/TikTok — built for correctness,
+speed, and change. React 19 + Vite + TypeScript (strict), with swappable auth
+**and** social backends.
+
+## User flow
+
+Signup / Login → **home feed immediately** (no landing page, no dashboard).
+From the feed you scroll, like, comment, share, follow, upload posts, DM other
+users, explore/search, and manage your profile — all from a bottom nav bar.
 
 ## Quick start
 
@@ -10,8 +17,9 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-The app runs immediately against a **mock auth backend** (localStorage) — no
-account, no keys, no network required.
+The app runs immediately against **mock backends** (localStorage) — no account,
+no keys, no network required. It ships with seeded creators, posts, and
+comments so the feed is alive the moment you sign up.
 
 ## Scripts
 
@@ -34,21 +42,29 @@ A Husky pre-commit hook runs `lint-staged` (ESLint + Prettier on staged files).
 ```
 src/
 ├─ components/
-│  ├─ ui/            Button, Input, Label, Checkbox, Spinner (shadcn-style)
-│  └─ auth/          SignupForm, PasswordStrengthMeter
-├─ pages/            SignupPage, DashboardPage
-├─ services/auth/    AuthAdapter interface + Mock & Supabase adapters
+│  ├─ ui/            Button, Input, Textarea, Label, Checkbox, Spinner
+│  ├─ auth/          SignupForm, LoginForm, PasswordStrengthMeter
+│  ├─ social/        Avatar, PostCard, PostGrid
+│  ├─ layout/        AppShell (top bar), BottomNav
+│  └─ RouteGuards    ProtectedRoute / PublicOnlyRoute + Splash
+├─ pages/            Feed, Explore, Upload, Messages, Conversation,
+│                    Profile, EditProfile, Post, Notifications, Login, Signup
+├─ services/
+│  ├─ auth/          AuthAdapter interface + Mock & Supabase adapters
+│  └─ social/        SocialAdapter interface + Mock adapter + seed data
 ├─ store/            Zustand auth store
-├─ hooks/            useSignup (TanStack Query mutation)
-├─ lib/              validation (Zod), passwordStrength, env, cn util
+├─ hooks/            useSignup/useLogin + useSocial (TanStack Query hooks)
+├─ lib/              validation (Zod), time/format, passwordStrength, env, cn
 └─ tests/            Vitest unit + component tests
 ```
 
-**The one seam that matters:** every backend implements `AuthAdapter`
-(`src/services/auth/types.ts`). UI, state, and hooks depend on that interface —
-never a concrete class — so swapping backends touches exactly one file.
+**The two seams that matter:** every backend implements `AuthAdapter`
+(`src/services/auth/types.ts`) or `SocialAdapter`
+(`src/services/social/types.ts`). UI, state, and hooks depend on those
+interfaces — never a concrete class — so swapping to a real backend touches only
+those adapter files, no components.
 
-## Switching to Supabase
+## Going live with Supabase
 
 1. `npm install @supabase/supabase-js`
 2. Copy `.env.example` → `.env` and set:
@@ -57,22 +73,15 @@ never a concrete class — so swapping backends touches exactly one file.
    VITE_SUPABASE_URL=<your project URL>
    VITE_SUPABASE_ANON_KEY=<your anon/public key>
    ```
-   The anon key is safe for the browser. **Never** put the `service_role` key
-   in a `VITE_*` variable — it would ship to every visitor.
-3. Implement the method bodies in `src/services/auth/supabaseAdapter.ts`
-   (each is a documented one-liner today). Nothing else changes.
+   The anon key is safe for the browser. **Never** put the `service_role` key in
+   a `VITE_*` variable — it would ship to every visitor.
+3. Implement `src/services/auth/supabaseAdapter.ts`, then write a
+   `SupabaseSocialAdapter` implementing `SocialAdapter` and swap the one line in
+   `src/services/social/index.ts`. Nothing in the UI changes.
 
-## What this starter deliberately does NOT include
+## Deliberately not included (yet)
 
-The original brief listed ~60 packages. These were left out on purpose:
-
-- **SonarQube, Sentry, LogRocket, Mixpanel, Hotjar, GA4** — external SaaS that
-  need accounts and secret keys. The error boundary has a marked spot to wire
-  Sentry/LogRocket once you have keys.
-- **Jotai** — overlaps Zustand; one client-state library is enough.
-- **Cypress** — Playwright already covers E2E.
-- **dotenv** — Vite has built-in env handling (`import.meta.env`).
-- **compression / rate-limiter-flexible** — server middleware; no-ops in a SPA.
-- **crypto-js** — client-side "encryption" of secrets is not security.
-
-Add any of them when a real need appears, not before.
+External SaaS that needs accounts/keys (Sentry, LogRocket, analytics), redundant
+libraries, and server-only middleware are left out on purpose — add them when a
+real need appears. Payments, real-time via Supabase Realtime, and push
+notifications slot in behind the same adapter pattern.

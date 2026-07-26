@@ -9,6 +9,7 @@ import { signupSchema, type SignupFormValues } from '@/lib/validation';
 import { useSignup } from '@/hooks/useSignup';
 import { useAuthStore } from '@/store/useAuthStore';
 import { AuthError } from '@/services/auth';
+import { socialAdapter } from '@/services/social';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,9 +55,10 @@ export function SignupForm() {
     signup.mutate(
       { email: values.email, password: values.password },
       {
-        onSuccess: (user) => {
+        onSuccess: async (user) => {
+          await socialAdapter.ensureProfile(user);
           setUser(user);
-          navigate('/dashboard', { replace: true });
+          navigate('/', { replace: true });
         },
         onError: (error) => {
           setServerError(

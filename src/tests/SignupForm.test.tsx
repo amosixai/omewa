@@ -19,7 +19,7 @@ function renderSignup() {
       <MemoryRouter initialEntries={['/signup']}>
         <Routes>
           <Route path="/signup" element={<SignupForm />} />
-          <Route path="/dashboard" element={<div>Dashboard screen</div>} />
+          <Route path="/" element={<div>Home feed</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -48,14 +48,14 @@ describe('SignupForm', () => {
     expect(await screen.findByText(/email is required/i)).toBeInTheDocument();
   });
 
-  it('creates an account and redirects to the dashboard', async () => {
+  it('creates an account and redirects to the feed', async () => {
     const user = userEvent.setup();
     renderSignup();
 
     await fillValidForm(user);
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
-    expect(await screen.findByText(/dashboard screen/i)).toBeInTheDocument();
+    expect(await screen.findByText(/home feed/i)).toBeInTheDocument();
     expect(useAuthStore.getState().user?.email).toBe('new@example.com');
   });
 
