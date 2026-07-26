@@ -1,53 +1,65 @@
 import { AuthError } from './types';
 import type { AuthAdapter, AuthUser, Credentials } from './types';
-import { env } from '@/lib/env';
+import { getSupabaseClient } from '@/services/supabase/client';
 
 /**
- * Supabase-backed adapter — READY, not wired. Its shape already matches
- * AuthAdapter, so activating it changes nothing else in the app:
+ * Supabase-backed auth. Activate by setting in .env:
  *
- *   1. npm install @supabase/supabase-js
- *   2. In .env:  VITE_AUTH_PROVIDER=supabase
- *                VITE_SUPABASE_URL=<your project URL>
- *                VITE_SUPABASE_ANON_KEY=<your anon/public key>
- *   3. Replace each `notWired()` body below with a real Supabase call, e.g.
+ *   VITE_AUTH_PROVIDER=supabase
+ *   VITE_SUPABASE_URL=<your project URL>
+ *   VITE_SUPABASE_ANON_KEY=<your anon/public key>
  *
- *        import { createClient } from '@supabase/supabase-js';
- *        const client = createClient(url, anonKey);
- *        const { data, error } = await client.auth.signUp({ email, password });
- *
- * The anon key is safe for the browser. NEVER put the service_role key here.
+ * A DB trigger (see supabase/schema.sql) creates the matching profile row on
+ * signup, so no extra call is needed here. NOTE: written against the Supabase
+ * JS API but not yet run against a live project — review before production.
  */
+function toAuthUser(user: {
+  id: string;
+  email?: string;
+  created_at?: string;
+}): AuthUser {
+  return {
+    id: user.id,
+    email: user.email ?? '',
+    createdAt: user.created_at ?? new Date().toISOString(),
+  };
+}
+
 export class SupabaseAuthAdapter implements AuthAdapter {
-  constructor() {
-    if (!env.VITE_SUPABASE_URL || !env.VITE_SUPABASE_ANON_KEY) {
+  async signup({ email, password }: Credentials): Promise<AuthUser> {
+    const { data, error } = await getSupabaseClient().auth.signUp({
+      email,
+      password,
+    });
+    if (error) throw new AuthError(error.message, 'unknown');
+    if (!data.user) {
+      // Email-confirmation projects return no session until the link is clicked.
       throw new AuthError(
-        'Supabase is selected but VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are missing.',
-        'not_configured',
+        'Check your email to confirm your account, then log in.',
+        'unknown',
       );
     }
+    return toAuthUser(data.user);
   }
 
-  private notWired(): never {
-    throw new AuthError(
-      'SupabaseAuthAdapter is a stub. Install @supabase/supabase-js and implement its methods.',
-      'not_configured',
-    );
-  }
-
-  async signup(_credentials: Credentials): Promise<AuthUser> {
-    return this.notWired();
-  }
-
-  async login(_credentials: Credentials): Promise<AuthUser> {
-    return this.notWired();
+  async login({ email, password }: Credentials): Promise<AuthUser> {
+    const { data, error } = await getSupabaseClient().auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error || !data.user) {
+      throw new AuthError('Invalid email or password.', 'invalid_credentials');
+    }
+    return toAuthUser(data.user);
   }
 
   async logout(): Promise<void> {
-    this.notWired();
+    const { error } = await getSupabaseClient().auth.signOut();
+    if (error) throw new AuthError(error.message, 'unknown');
   }
 
   async getCurrentUser(): Promise<AuthUser | null> {
-    return this.notWired();
+    const { data } = await getSupabaseClient().auth.getUser();
+    return data.user ? toAuthUser(data.user) : null;
   }
 }

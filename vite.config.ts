@@ -21,6 +21,7 @@ export default defineConfig({
           motion: ['framer-motion'],
           query: ['@tanstack/react-query'],
           forms: ['react-hook-form', '@hookform/resolvers', 'zod'],
+          supabase: ['@supabase/supabase-js'],
         },
       },
     },

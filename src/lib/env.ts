@@ -6,6 +6,7 @@ import { z } from 'zod';
  */
 const envSchema = z.object({
   VITE_AUTH_PROVIDER: z.enum(['mock', 'supabase']).default('mock'),
+  VITE_SOCIAL_PROVIDER: z.enum(['mock', 'supabase']).default('mock'),
   VITE_SUPABASE_URL: z.string().optional(),
   VITE_SUPABASE_ANON_KEY: z.string().optional(),
 });
@@ -24,4 +25,4 @@ if (!result.success) {
 
 export const env: Env = result.success
   ? result.data
-  : { VITE_AUTH_PROVIDER: 'mock' };
+  : { VITE_AUTH_PROVIDER: 'mock', VITE_SOCIAL_PROVIDER: 'mock' };
