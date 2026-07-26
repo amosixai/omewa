@@ -1,18 +1,33 @@
 -- ============================================================================
--- Amosix — Supabase schema, indexes, and Row Level Security.
--- Run this in the Supabase SQL editor (or `supabase db push`) on a fresh
--- project. It mirrors the SocialAdapter interface in
--- src/services/social/types.ts. Counts (followers, likes, comments) are
--- DERIVED from rows, never stored, so they can't drift.
+-- Amosix — ONE-SHOT reset + schema for a project that has leftover/mismatched
+-- tables from earlier attempts. Paste the WHOLE file into the Supabase SQL
+-- editor and Run once. It wipes the public schema (destroys any data there —
+-- fine for a scratch project) and rebuilds exactly what the app needs.
+--
+-- Does NOT touch auth.users, so existing accounts survive; their profile row
+-- is recreated by the trigger on next login.
 -- ============================================================================
 
--- Needed for gen_random_uuid()
+-- ---- 1. Wipe and recreate the public schema (clears trust_events, old tables) ----
+drop schema if exists public cascade;
+create schema public;
+
+grant usage on schema public to postgres, anon, authenticated, service_role;
+grant all on schema public to postgres, service_role;
+
+-- Make tables/functions/sequences created below reachable by the API roles
+-- (RLS still governs row access). Mirrors a fresh Supabase project's defaults.
+alter default privileges in schema public
+  grant all on tables to postgres, anon, authenticated, service_role;
+alter default privileges in schema public
+  grant all on functions to postgres, anon, authenticated, service_role;
+alter default privileges in schema public
+  grant all on sequences to postgres, anon, authenticated, service_role;
+
+-- ---- 2. Schema ----
 create extension if not exists pgcrypto;
 
--- ---------------------------------------------------------------------------
--- profiles : one row per auth user (id === auth.users.id)
--- ---------------------------------------------------------------------------
-create table if not exists public.profiles (
+create table public.profiles (
   id            uuid primary key references auth.users (id) on delete cascade,
   username      text unique not null,
   display_name  text not null default '',
@@ -23,10 +38,7 @@ create table if not exists public.profiles (
   created_at    timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------------
--- follows : follower_id follows following_id
--- ---------------------------------------------------------------------------
-create table if not exists public.follows (
+create table public.follows (
   follower_id   uuid not null references public.profiles (id) on delete cascade,
   following_id  uuid not null references public.profiles (id) on delete cascade,
   created_at    timestamptz not null default now(),
@@ -34,72 +46,53 @@ create table if not exists public.follows (
   check (follower_id <> following_id)
 );
 
--- ---------------------------------------------------------------------------
--- posts
--- ---------------------------------------------------------------------------
-create table if not exists public.posts (
+create table public.posts (
   id          uuid primary key default gen_random_uuid(),
   author_id   uuid not null references public.profiles (id) on delete cascade,
   caption     text not null,
   image_url   text not null,
   created_at  timestamptz not null default now()
 );
-create index if not exists posts_author_created_idx
-  on public.posts (author_id, created_at desc);
-create index if not exists posts_created_idx
-  on public.posts (created_at desc);
+create index posts_author_created_idx on public.posts (author_id, created_at desc);
+create index posts_created_idx on public.posts (created_at desc);
 
--- ---------------------------------------------------------------------------
--- likes
--- ---------------------------------------------------------------------------
-create table if not exists public.likes (
-  post_id   uuid not null references public.posts (id) on delete cascade,
-  user_id   uuid not null references public.profiles (id) on delete cascade,
+create table public.likes (
+  post_id    uuid not null references public.posts (id) on delete cascade,
+  user_id    uuid not null references public.profiles (id) on delete cascade,
   created_at timestamptz not null default now(),
   primary key (post_id, user_id)
 );
 
--- ---------------------------------------------------------------------------
--- comments
--- ---------------------------------------------------------------------------
-create table if not exists public.comments (
+create table public.comments (
   id          uuid primary key default gen_random_uuid(),
   post_id     uuid not null references public.posts (id) on delete cascade,
   author_id   uuid not null references public.profiles (id) on delete cascade,
   text        text not null,
   created_at  timestamptz not null default now()
 );
-create index if not exists comments_post_idx
-  on public.comments (post_id, created_at);
+create index comments_post_idx on public.comments (post_id, created_at);
 
--- ---------------------------------------------------------------------------
--- conversations + participants + messages
--- ---------------------------------------------------------------------------
-create table if not exists public.conversations (
+create table public.conversations (
   id          uuid primary key default gen_random_uuid(),
   created_at  timestamptz not null default now()
 );
 
-create table if not exists public.conversation_participants (
+create table public.conversation_participants (
   conversation_id uuid not null references public.conversations (id) on delete cascade,
   user_id         uuid not null references public.profiles (id) on delete cascade,
   primary key (conversation_id, user_id)
 );
 
-create table if not exists public.messages (
+create table public.messages (
   id              uuid primary key default gen_random_uuid(),
   conversation_id uuid not null references public.conversations (id) on delete cascade,
   sender_id       uuid not null references public.profiles (id) on delete cascade,
   text            text not null,
   created_at      timestamptz not null default now()
 );
-create index if not exists messages_conversation_idx
-  on public.messages (conversation_id, created_at);
+create index messages_conversation_idx on public.messages (conversation_id, created_at);
 
--- ---------------------------------------------------------------------------
--- notifications
--- ---------------------------------------------------------------------------
-create table if not exists public.notifications (
+create table public.notifications (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references public.profiles (id) on delete cascade,
   actor_id    uuid not null references public.profiles (id) on delete cascade,
@@ -108,13 +101,9 @@ create table if not exists public.notifications (
   created_at  timestamptz not null default now(),
   read        boolean not null default false
 );
-create index if not exists notifications_user_idx
-  on public.notifications (user_id, created_at desc);
+create index notifications_user_idx on public.notifications (user_id, created_at desc);
 
--- ---------------------------------------------------------------------------
--- Auto-create a profile whenever a new auth user signs up.
--- Username = email local part, de-duplicated with a short suffix.
--- ---------------------------------------------------------------------------
+-- ---- 3. Auto-create a profile on signup ----
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -141,11 +130,8 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- ---------------------------------------------------------------------------
--- Membership check used by conversation/message policies. SECURITY DEFINER so
--- its lookup bypasses RLS on conversation_participants — without this, a policy
--- on that table that queries the same table recurses infinitely (error 42P17).
--- ---------------------------------------------------------------------------
+-- Membership check for conversation/message policies. SECURITY DEFINER so it
+-- bypasses RLS on conversation_participants — prevents infinite recursion.
 create or replace function public.is_conversation_member(cid uuid, uid uuid)
 returns boolean
 language sql
@@ -158,26 +144,22 @@ as $$
   );
 $$;
 
--- ============================================================================
--- Row Level Security
--- ============================================================================
-alter table public.profiles                enable row level security;
-alter table public.follows                 enable row level security;
-alter table public.posts                   enable row level security;
-alter table public.likes                   enable row level security;
-alter table public.comments                enable row level security;
-alter table public.conversations           enable row level security;
+-- ---- 4. Row Level Security ----
+alter table public.profiles                  enable row level security;
+alter table public.follows                   enable row level security;
+alter table public.posts                     enable row level security;
+alter table public.likes                     enable row level security;
+alter table public.comments                  enable row level security;
+alter table public.conversations             enable row level security;
 alter table public.conversation_participants enable row level security;
-alter table public.messages                enable row level security;
-alter table public.notifications           enable row level security;
+alter table public.messages                  enable row level security;
+alter table public.notifications             enable row level security;
 
--- profiles: everyone signed in can read; you may only edit your own.
 create policy "profiles are readable" on public.profiles
   for select using (auth.role() = 'authenticated');
 create policy "update own profile" on public.profiles
   for update using (auth.uid() = id) with check (auth.uid() = id);
 
--- follows: readable by all; you may only create/remove your own follows.
 create policy "follows are readable" on public.follows
   for select using (auth.role() = 'authenticated');
 create policy "follow as self" on public.follows
@@ -185,7 +167,6 @@ create policy "follow as self" on public.follows
 create policy "unfollow as self" on public.follows
   for delete using (auth.uid() = follower_id);
 
--- posts: readable by all; author-only write/delete.
 create policy "posts are readable" on public.posts
   for select using (auth.role() = 'authenticated');
 create policy "insert own post" on public.posts
@@ -193,7 +174,6 @@ create policy "insert own post" on public.posts
 create policy "delete own post" on public.posts
   for delete using (auth.uid() = author_id);
 
--- likes: readable by all; like/unlike as self.
 create policy "likes are readable" on public.likes
   for select using (auth.role() = 'authenticated');
 create policy "like as self" on public.likes
@@ -201,7 +181,6 @@ create policy "like as self" on public.likes
 create policy "unlike as self" on public.likes
   for delete using (auth.uid() = user_id);
 
--- comments: readable by all; author-only write/delete.
 create policy "comments are readable" on public.comments
   for select using (auth.role() = 'authenticated');
 create policy "comment as self" on public.comments
@@ -209,8 +188,6 @@ create policy "comment as self" on public.comments
 create policy "delete own comment" on public.comments
   for delete using (auth.uid() = author_id);
 
--- conversations & messages: participants only (membership via the SECURITY
--- DEFINER helper above, so none of these policies recurse).
 create policy "read own conversations" on public.conversations
   for select using (public.is_conversation_member(id, auth.uid()));
 create policy "create conversations" on public.conversations
@@ -229,7 +206,6 @@ create policy "send as self in own conversations" on public.messages
     and public.is_conversation_member(conversation_id, auth.uid())
   );
 
--- notifications: only the recipient can read/update.
 create policy "read own notifications" on public.notifications
   for select using (auth.uid() = user_id);
 create policy "update own notifications" on public.notifications
