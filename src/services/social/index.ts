@@ -1,16 +1,20 @@
 import { env } from '@/lib/env';
+import { isSupabaseConfigured } from '@/services/supabase/client';
 import { MockSocialAdapter } from './mockAdapter';
 import { SupabaseSocialAdapter } from './supabaseAdapter';
 import type { SocialAdapter } from './types';
 
 function createSocialAdapter(): SocialAdapter {
-  switch (env.VITE_SOCIAL_PROVIDER) {
-    case 'supabase':
-      return new SupabaseSocialAdapter();
-    case 'mock':
-    default:
-      return new MockSocialAdapter();
+  if (env.VITE_SOCIAL_PROVIDER === 'supabase') {
+    if (isSupabaseConfigured()) return new SupabaseSocialAdapter();
+    // Misconfigured deploy (env vars didn't reach the build): don't crash the
+    // whole site — run on the mock so the app still loads. Fix the Vercel env
+    // vars + redeploy to switch to the real database.
+    console.warn(
+      '[Amosix] VITE_SOCIAL_PROVIDER=supabase but Supabase env vars are missing — using the mock backend instead of failing.',
+    );
   }
+  return new MockSocialAdapter();
 }
 
 /**

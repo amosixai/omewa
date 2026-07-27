@@ -12,6 +12,11 @@ import { env } from '@/lib/env';
  */
 let client: SupabaseClient | null = null;
 
+/** True only when both Supabase env vars are present and non-empty. */
+export function isSupabaseConfigured(): boolean {
+  return Boolean(env.VITE_SUPABASE_URL && env.VITE_SUPABASE_ANON_KEY);
+}
+
 export function getSupabaseClient(): SupabaseClient {
   if (client) return client;
   const { VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY } = env;
